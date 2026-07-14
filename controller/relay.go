@@ -65,6 +65,21 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 	return err
 }
 
+func ResponsesWebSocket(c *gin.Context) {
+	requestId := c.GetString(common.RequestIdKey)
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer ws.Close()
+
+	if apiErr := relay.ResponsesWebSocketHelper(c, ws); apiErr != nil {
+		logger.LogError(c, "responses websocket relay error: "+common.LocalLogPreview(apiErr.Error()))
+		apiErr.SetMessage(common.MessageWithRequestId(apiErr.Error(), requestId))
+		helper.WssError(c, ws, apiErr.ToOpenAIError())
+	}
+}
+
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	requestId := c.GetString(common.RequestIdKey)
@@ -249,7 +264,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 }
 
 var upgrader = websocket.Upgrader{
-	Subprotocols: []string{"realtime"}, // WS 握手支持的协议，如果有使用 Sec-WebSocket-Protocol，则必须在此声明对应的 Protocol TODO add other protocol
+	Subprotocols: []string{"realtime", "responses"},
 	CheckOrigin: func(r *http.Request) bool {
 		return true // 允许跨域
 	},
