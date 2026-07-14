@@ -159,6 +159,10 @@ func cloneOpenAIUsage(usage *Usage) *Usage {
 		inputTokensDetails := *usage.InputTokensDetails
 		clone.InputTokensDetails = &inputTokensDetails
 	}
+	if usage.OutputTokensDetails != nil {
+		outputTokensDetails := *usage.OutputTokensDetails
+		clone.OutputTokensDetails = &outputTokensDetails
+	}
 	return &clone
 }
 

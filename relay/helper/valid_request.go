@@ -134,16 +134,42 @@ func GetAndValidateResponsesRequest(c *gin.Context) (*dto.OpenAIResponsesRequest
 	if err != nil {
 		return nil, err
 	}
-	if request.Model == "" {
-		return nil, errors.New("model is required")
-	}
-	if request.Input == nil {
-		return nil, errors.New("input is required")
-	}
-	if exceedsMaxTokensLimit(request.MaxOutputTokens) {
-		return nil, errors.New("max_output_tokens is invalid")
+	if err := ValidateResponsesRequest(request); err != nil {
+		return nil, err
 	}
 	return request, nil
+}
+
+// ValidateResponsesRequest applies transport-independent Responses API bounds.
+// WebSocket response.create frames must use the same validation as HTTP POSTs.
+func ValidateResponsesRequest(request *dto.OpenAIResponsesRequest) error {
+	return validateResponsesRequest(request, true)
+}
+
+// ValidateResponsesWebSocketRequest allows protocol-valid state-only frames:
+// generate=false warmups and continuations carrying previous_response_id.
+func ValidateResponsesWebSocketRequest(request *dto.OpenAIResponsesRequest, generate bool) error {
+	requireInput := generate
+	if request != nil {
+		requireInput = generate && strings.TrimSpace(request.PreviousResponseID) == ""
+	}
+	return validateResponsesRequest(request, requireInput)
+}
+
+func validateResponsesRequest(request *dto.OpenAIResponsesRequest, requireInput bool) error {
+	if request == nil {
+		return errors.New("request is required")
+	}
+	if request.Model == "" {
+		return errors.New("model is required")
+	}
+	if requireInput && request.Input == nil {
+		return errors.New("input is required")
+	}
+	if exceedsMaxTokensLimit(request.MaxOutputTokens) {
+		return errors.New("max_output_tokens is invalid")
+	}
+	return nil
 }
 
 func GetAndValidateResponsesCompactionRequest(c *gin.Context) (*dto.OpenAIResponsesCompactionRequest, error) {
