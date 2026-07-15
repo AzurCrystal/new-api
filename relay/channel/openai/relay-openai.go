@@ -119,6 +119,8 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var usage = &dto.Usage{}
 	var lastStreamData string
 	var secondLastStreamData string // 存储倒数第二个stream data，用于音频模型
+	var lastValidUsage *dto.Usage
+	var lastValidUsageData string
 
 	// 检查是否为音频模型
 	isAudioModel := strings.Contains(strings.ToLower(model), "audio")
@@ -137,6 +139,13 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			}
 
 			lastStreamData = data
+			if strings.Contains(data, `"usage"`) {
+				var chunkWithUsage dto.ChatCompletionsStreamResponse
+				if err := common.UnmarshalJsonStr(data, &chunkWithUsage); err == nil && service.ValidUsage(chunkWithUsage.Usage) {
+					lastValidUsage = chunkWithUsage.Usage
+					lastValidUsageData = data
+				}
+			}
 			if err := processTokenData(info.RelayMode, data, &responseTextBuilder, &toolCount); err != nil {
 				logger.LogError(c, "error processing stream token data: "+err.Error())
 				sr.Error(err)
@@ -175,12 +184,20 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		}
 	}
 
+	if !containStreamUsage && lastValidUsage != nil {
+		usage = lastValidUsage
+		containStreamUsage = true
+	}
+
 	if !containStreamUsage {
 		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
 		usage.CompletionTokens += toolCount * 7
 	}
 
 	applyUsagePostProcessing(info, usage, common.StringToByteSlice(lastStreamData))
+	if lastValidUsageData != "" && lastValidUsageData != lastStreamData && usage.PromptTokensDetails.CachedTokens == 0 {
+		applyUsagePostProcessing(info, usage, common.StringToByteSlice(lastValidUsageData))
+	}
 
 	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
 
